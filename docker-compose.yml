@@ -1,0 +1,18 @@
+version: '3'
+services:
+  work01:
+    image: ssh-server:ubuntu-22.04
+    build:
+      context: .
+      dockerfile: Dockerfile
+    hostname: work01
+    volumes:
+      - .:/build
+  work02:
+    image: ssh-server:ubuntu-22.04
+    build:
+      context: .
+      dockerfile: Dockerfile
+    hostname: work02
+    volumes:
+      - .:/build
