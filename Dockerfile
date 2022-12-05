@@ -15,7 +15,7 @@ aptitude sudo vim curl \
 net-tools iputils-ping traceroute netcat \
 telnet dnsutils \
 && apt install /tmp/dumb-init_1.2.5_arm64.deb \
-&& mkdir /var/run/ssh \
+&& mkdir /var/run/sshd \
 && apt clean \
 && rm -rf /var/lib/apt/lists* /tmp/* /var/tmp*
 USER root
