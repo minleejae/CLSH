@@ -10,6 +10,7 @@ RUN echo $TZ > /etc/timezone
 RUN sed -i "s#/archive.ubuntu.com/#/mirror.kakao.com/#g" /etc/apt/sources.list
 RUN apt update \
 && apt install -qq -y \
+gcc \
 openssh-server \
 aptitude sudo vim curl \
 net-tools iputils-ping traceroute netcat \
