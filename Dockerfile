@@ -12,6 +12,7 @@ RUN apt update \
 && apt install -qq -y \
 gcc \
 openssh-server \
+sshpass \
 aptitude sudo vim curl \
 net-tools iputils-ping traceroute netcat \
 telnet dnsutils \

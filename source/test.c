@@ -3,9 +3,15 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <stdbool.h>
 #include <sys/types.h>
+#include <fcntl.h>
+#include <errno.h>
+
+#define MSGSIZE 300
 
 
+int connectedNodes = 0;
 char *totalNodes[] = {"node1", "node2", "node3", "node4"};
 
 //원격 명령어 파싱하는 함수
@@ -98,116 +104,96 @@ int input() {
 int main() {
     pid_t childPid[4] = {0};
     //ssh fork, exec
-    int N = 1;
+    int N = 4;
     pid_t pid[N]; /* process id */
-    
-    char buf[100];
 
+    char buf[MSGSIZE];
     int childStatus;
     int i;
 
-    for (i = 0; i < N; i++) {
-        int fd1[2], fd2[2];
+    int fd1[N][2], fd2[N][2];
 
+    //ssh connect
+    for (i = 0; i < N; i++) {
         //파이프 생성
-        if (pipe(fd1) == -1) {
+        if (pipe(fd1[i]) == -1) {
             perror("pipe");
             exit(1);
         }
-        if (pipe(fd2) == -1) {
+        if (pipe(fd2[i]) == -1) {
             perror("pipe");
             exit(1);
+        }
+
+        //read non block
+        if (fcntl(fd2[i][0], F_SETFL, O_NONBLOCK) == -1) {
+            perror("fcntl call");
         }
 
         pid[i] = fork();
-        if (pid[i] == 0) {
-            close(fd1[1]);
-            close(fd2[0]);
+        if (pid[i] == 0) { // Child Process
+            close(fd1[i][1]);
+            close(fd2[i][0]);
 
             //표준 입력을 fd1[0]이 가리키는 파이프에서 읽는다.
-            dup2(fd1[0], 0);
-            close(fd1[0]);
+            dup2(fd1[i][0], STDIN_FILENO);
+            close(fd1[i][0]);
 
             //표준 출력을 파이프를 통해 출력
-            dup2(fd2[1],1);
-            close(fd1[1]);
+            dup2(fd2[i][1], STDOUT_FILENO);
+            close(fd1[i][1]);
 
-            int len = read(0, buf, 6);
-            write(1, buf, len);
+            //buffer setting
+            setvbuf(stdin, NULL, _IOLBF, 0);
+            setvbuf(stdout, NULL, _IOLBF, 0);
 
-//
-//            char *exec_arg[] = {"ssh", totalNodes[i], "-l", "ubuntu", NULL};
-//            execv("/bin/ssh", exec_arg);
-
-            write(1, "Good\n", 6);
-            printf("Now pid[%d] is die\n", i);
-//            exit(100 + i);
+            //ssh connect  명령어 :  sshpass -p ubuntu ssh -tt node1 -l ubuntu : 비밀번호 추가 입력없이 연결
+            char *exec_arg[] = { "sshpass", "-p", "ubuntu",  "ssh", "-tt", totalNodes[i], "-l", "ubuntu", NULL};
+            execv("/bin/sshpass", exec_arg);
         } else {
-            close(fd1[0]);
-            close(fd2[1]);
+            close(fd1[i][0]);
+            close(fd2[i][1]);
 
-//            dup2(fd1[1],1);
-//            close(fd1[1]);
+            //buffer setting
+            setvbuf(stdin, NULL, _IOLBF, 0);
+            setvbuf(stdout, NULL, _IOLBF, 0);
 
-//            dup2(fd2[0], 0);
-//
-            memset(buf, 0, sizeof(buf));
-            fgets(buf, sizeof(buf) - 1, stdin);
-            buf[strlen(buf) - 1] = '\0';
-
-            write(fd1[1], buf, 20);
-            int len = read(fd2[0], buf, 256);
-            write(1, buf, len);
-
-            wait(NULL);
+            write(fd1[i][1], "cat /proc/loadavg\n", 19);
         }
         // Create multiple child processes
     }
 
+
+    int nread;
+    while (1) {
+//        input();
+
+        for (int j = 0; j < N; j++) {
+            switch (nread = read(fd2[j][0], buf, MSGSIZE)) {
+                case -1:
+                    if (errno == EAGAIN) {
+                        sleep(1);
+                        break;
+                    } else perror("read call");
+                case 0:
+                    printf("End of conversation\n");
+                    exit(0);
+                default:
+                    printf("MSG=%s\n", buf);
+            }
+        }
+    }
+
+
+    //wait
     for (i = 0; i < N; i++) {
         pid_t terminatedChild = wait(&childStatus);
-
         if (WIFEXITED(childStatus)) {
-            // The child process has termindated normally
-
             printf("Child %d has terminated with exit status %d\n", terminatedChild, WEXITSTATUS(childStatus));
         } else
             printf("Child %d has terminated abnormally\n", terminatedChild);
     }
 
-
-//    for (int i = 0; i < 4; i++) {
-//        //ssh연결을 할 자식 프로세스
-//        childPid[i] = fork();
-//        if (childPid[i] == 0) {
-//            printf("%s Child Process My PID:%d, My Parent's PID:%d, MY Childs'Pid %d\n", totalNodes[i], (int) getpid(),
-//                   (int) getppid(),
-//                   (int) childPid[i]);
-//            char *exec_arg[] = {"ssh", totalNodes[i], "-l", "ubuntu"};
-//            execv("/bin/ssh", exec_arg);
-//            wait(NULL);
-//        }
-//    }
-//
-//    if (childPid[0] !=0){
-//        printf("I'm Parent Process My PID:%d, My Parent's PID:%d, MY Childs'Pid %d\n", (int) getpid(),
-//               (int) getppid(),
-//               (int) childPid[0]);
-//
-//        for(int i=0; i<4; i++){
-//            printf("%d\n",childPid[i]);
-//        }
-//    }
-
-//    printf("----- ssh connected!------\n");
-//
-//    while (1) {
-//        if (input() == -1) {
-//            return 0;
-//        }
-//
-//
-//    }
 
     return 0;
 }
