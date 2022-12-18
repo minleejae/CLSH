@@ -17,7 +17,7 @@ pid_t pid[TOTAL_NODES_NUM]; /* process id */
 
 
 //원격 명령어 파싱하는 함수, 문자 개수 리턴
-int getRemoteCommend(char parsing[][100], int start, int inputWords, char remoteCommand[]) {
+int getRemoteCommend(char parsing[][MSGSIZE], int start, int inputWords, char remoteCommand[]) {
     int idx = 0;
     for (int i = start; i < inputWords; i++) {
         for (int j = 0; parsing[i][j] != '\0'; j++) {
@@ -32,7 +32,7 @@ int getRemoteCommend(char parsing[][100], int start, int inputWords, char remote
 
 
 //문자열 파싱
-int parseInput(char buf[], char parsing[][100], const char *delimeter) {
+int parseInput(char buf[], char parsing[][MSGSIZE], const char *delimeter) {
     int words = 0;
     char *res = strtok(buf, delimeter);
     while (res != NULL) {
@@ -80,7 +80,7 @@ void sigChildHandler(int signo) {
         if ((pid_child = waitpid(-1, &status, WNOHANG)) > 0) {
             printf("자식 프로세스(%d)가 종료되었습니다.\n", pid_child);
             for (int i = 0; i < TOTAL_NODES_NUM; i++) {
-                if ((int)pid_child == (int)pid[i]) {
+                if ((int) pid_child == (int) pid[i]) {
                     node = i;
                 }
             }
@@ -96,13 +96,10 @@ void sigChildHandler(int signo) {
 
 int main() {
     char buf[MSGSIZE];
-    int i;
-
-
     int fd1[TOTAL_NODES_NUM][2], fd2[TOTAL_NODES_NUM][2], fd3[TOTAL_NODES_NUM][2];
 
     //ssh connect
-    for (i = 0; i < TOTAL_NODES_NUM; i++) {
+    for (int i = 0; i < TOTAL_NODES_NUM; i++) {
         //파이프 생성
         if (pipe(fd1[i]) == -1) {
             perror("pipe");
@@ -162,6 +159,8 @@ int main() {
     //SIGTERM, SIGINT, SIGTSTP, SIGQUIT 시그널 처리
     struct sigaction act, chld;
     sigemptyset(&act.sa_mask);
+    //SIGCHLD Block
+    sigaddset(&act.sa_mask, SIGCHLD);
     act.sa_flags = 0;
     act.sa_handler = sigTermHandler;
     if (sigaction(SIGTERM, &act, (struct sigaction *) NULL) < 0) {
@@ -240,12 +239,12 @@ int main() {
         }
 
         //문자열 파싱
-        char parsing[10][100] = {0};
+        char parsing[10][MSGSIZE] = {0};
         int inputWords = parseInput(inputBuf, parsing, " ");
 
         //명령을 보낼 노드와 명령어
-        char nodes[10][100] = {0};
-        char remoteCommand[200] = {0};
+        char nodes[10][MSGSIZE] = {0};
+        char remoteCommand[MSGSIZE] = {0};
         int inputNodesNum = -1;
         int commandLength = -1;
 
@@ -371,10 +370,13 @@ int main() {
                                     break;
                                 default:
                                     interactiveNodes[j] = 1;
-                                    char res[10][100] = {0};
+                                    char res[10][MSGSIZE] = {0};
                                     //문자열 파싱
-                                    parseInput(interactiveOutputBuf, res, "\r\n");
-                                    printf("%s:%s\n", totalNodes[j], res[2]);
+                                    int words = parseInput(interactiveOutputBuf, res, "\r\n");
+                                    printf("%s:", totalNodes[j]);
+                                    for (int i = 2; i < words - 1; i++) {
+                                        printf("%s\n", res[i]);
+                                    }
                             }
                         }
                         //요청이 모두 출력되었으면 while문 종료
@@ -427,11 +429,14 @@ int main() {
                         break;
                     default:
                         completedNodes[j] = 1;
-                        char procLoadAvg[10][100] = {0};
+                        char procLoadAvg[10][MSGSIZE] = {0};
 
                         //문자열 파싱
-                        parseInput(buf, procLoadAvg, "\r\n");
-                        printf("%s:%s\n", totalNodes[j], procLoadAvg[2]);
+                        int words = parseInput(buf, procLoadAvg, "\r\n");
+                        printf("%s:", totalNodes[j]);
+                        for (int i = 2; i < words - 1; i++) {
+                            printf("%s\n", procLoadAvg[i]);
+                        }
                 }
             }
 
