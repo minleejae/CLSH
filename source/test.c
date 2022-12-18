@@ -8,7 +8,7 @@
 #include <fcntl.h>
 #include <errno.h>
 
-#define MSGSIZE 300
+#define MSGSIZE 1000
 
 int totalNodesNum = 4;
 char *totalNodes[] = {"node1", "node2", "node3", "node4"};
@@ -152,27 +152,44 @@ int main() {
         char parsing[10][100] = {0};
         int inputWords = parseInput(inputBuf, parsing, " ");
 
-        //exit
-        if (strlen(inputBuf) != 0 && !strncmp(inputBuf, "exit", strlen(inputBuf))) {
+        //명령을 보낼 노드와 명령어
+        char nodes[10][100] = {0};
+        char remoteCommand[200] = {0};
+        int inputNodesNum = -1;
+        int commandLength = -1;
+
+        if (strlen(inputBuf) != 0 && !strncmp(inputBuf, "exit", strlen(inputBuf))) { //exit
             printf("exit from cluster shell\n");
             return -1;
         } else if (!strncmp(parsing[0], "clsh", strlen(parsing[0]))) { //clsh 명령어
-            char nodes[10][100] = {0};
-            char remoteCommand[200] = {0};
-
             //clsh -h node1,node2,node3,node4 cat /proc/loadavg
-            if (!strncmp(parsing[1], "-h", strlen(parsing[0]))) {
-                int inputNodesNum = parseInput(parsing[2], nodes, ",");
-                int commandLength = getRemoteCommend(parsing, 3, inputWords, remoteCommand);
+            if (!strncmp(parsing[1], "-h", 2)) {
+                //명령을 보낼 노드 구하기
+                inputNodesNum = parseInput(parsing[2], nodes, ",");
+                commandLength = getRemoteCommend(parsing, 3, inputWords, remoteCommand);
 
-                //노드 이름 비교하고 명령 보내기
-                for (int i = 0; i < inputNodesNum; i++) {
-                    //미리 선언한 totalNodes와 이름 비교하고 명령어 전달
-                    for (int j = 0; j < totalNodesNum; j++) {
-                        if (!strncmp(totalNodes[j], nodes[i], strlen(nodes[i]))) {
-                            completedNodes[j] = 0;
-                            write(fd1[j][1], remoteCommand, commandLength);
-                        }
+            } else if ((!strncmp(parsing[1], "--hostfile", 10))) { //clsh --hostfile ./hostfile cat /proc/loadavg
+                commandLength = getRemoteCommend(parsing, 3, inputWords, remoteCommand);
+                int hostFileFd = -1;
+                char hostFileBuf[MSGSIZE] = {0};
+                //hostfile에서 읽기
+                if ((hostFileFd = open("./hostfile", O_RDONLY)) > 0) {
+                    int len = read(hostFileFd, hostFileBuf, MSGSIZE);
+                    //파일에 적혀있는 노드 이름 파싱
+                    inputNodesNum = parseInput(hostFileBuf, nodes, "\n");
+                    close(hostFileFd);
+                } else {
+                    printf("%s 파일 열기에 실패했습니다.\n", parsing[2]);
+                }
+            }
+
+            //노드 이름 비교하고 명령 보내기
+            for (int i = 0; i < inputNodesNum; i++) {
+                //미리 선언한 totalNodes와 이름 비교하고 명령어 전달
+                for (int j = 0; j < totalNodesNum; j++) {
+                    if (!strncmp(totalNodes[j], nodes[i], strlen(nodes[i]))) {
+                        completedNodes[j] = 0;
+                        write(fd1[j][1], remoteCommand, commandLength);
                     }
                 }
             }
@@ -181,7 +198,7 @@ int main() {
             continue;
         }
 
-
+        //파이프에 입력받은 내용 main에 출력
         while (1) {
             for (int j = 0; j < totalNodesNum; j++) {
                 //이미 출력했으면 출력하지 않음
@@ -217,8 +234,6 @@ int main() {
             if (flag) {
                 break;
             }
-
-
         }
     }
 
