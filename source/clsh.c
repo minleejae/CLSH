@@ -13,6 +13,7 @@
 int totalNodesNum = 4;
 char *totalNodes[] = {"node1", "node2", "node3", "node4"};
 
+
 //원격 명령어 파싱하는 함수, 문자 개수 리턴
 int getRemoteCommend(char parsing[][100], int start, int inputWords, char remoteCommand[]) {
     int idx = 0;
@@ -166,6 +167,7 @@ int main() {
         //명령을 보낼 노드와 명령어
         char nodes[10][100] = {0};
         char remoteCommand[200] = {0};
+        int curCommand[10] = {0};
         int inputNodesNum = -1;
         int commandLength = -1;
 
@@ -221,6 +223,40 @@ int main() {
                 } else {
                     printf("--hostfile 옵션이 제공되지 않았습니다\n");
                 }
+            }
+
+            //interactive mode 확인
+            printf("remote command : %s\n", remoteCommand);
+            if (!strncmp(remoteCommand, "-i", 2)) {
+                printf("Enter 'quit' to leave this interactive mode\n");
+                printf("Working with nodes: ");
+                //노드 이름 출력
+                for (int i = 0; i < inputNodesNum; i++) {
+                    printf("%s", nodes[i]);
+                    if (i == inputNodesNum - 1) {
+                        printf("\n");
+                    } else {
+                        printf(", ");
+                    }
+                }
+                //input 받기
+                while(1){
+                    //input
+                    printf("clsh>");
+                    char interactiveBuf[MSGSIZE] = {0};
+                    fgets(interactiveBuf, sizeof(interactiveBuf) - 1, stdin);
+                    interactiveBuf[strlen(interactiveBuf) - 1] = '\0';
+
+                    if(!strncmp(interactiveBuf, "quit", 4)){
+                        printf("interactive mode를 종료합니다.\n");
+                        break;
+                    }
+
+
+                }
+
+
+                continue;
             }
 
             //노드 이름 비교하고 명령 보내기
