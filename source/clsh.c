@@ -226,7 +226,6 @@ int main() {
             }
 
             //interactive mode 확인
-            printf("remote command : %s\n", remoteCommand);
             if (!strncmp(remoteCommand, "-i", 2)) {
                 printf("Enter 'quit' to leave this interactive mode\n");
                 printf("Working with nodes: ");
@@ -240,21 +239,79 @@ int main() {
                     }
                 }
                 //input 받기
-                while(1){
+                while (1) {
                     //input
+                    bool interactiveNodes[totalNodesNum];
+                    memcpy(interactiveNodes, completedNodes, sizeof(interactiveNodes));
+
                     printf("clsh>");
+                    //명령 입력받기
                     char interactiveBuf[MSGSIZE] = {0};
                     fgets(interactiveBuf, sizeof(interactiveBuf) - 1, stdin);
-                    interactiveBuf[strlen(interactiveBuf) - 1] = '\0';
-
-                    if(!strncmp(interactiveBuf, "quit", 4)){
+                    if (!strncmp(interactiveBuf, "quit", 4)) {
                         printf("interactive mode를 종료합니다.\n");
                         break;
                     }
 
+                    //로컬에서 실행하는 경우
+                    if (interactiveBuf[0] == '!') {
+                        write(1, "LOCAL:", 6);
+                        sleep(1);
+                        for (int i = 0; i < MSGSIZE - 1; i++) {
+                            interactiveBuf[i] = interactiveBuf[i + 1];
+                        }
+                        system(interactiveBuf);
+                        continue;
+                    }
 
+                    //노드 이름 비교하고 명령 보내기
+                    for (int i = 0; i < inputNodesNum; i++) {
+                        //미리 선언한 totalNodes와 이름 비교하고 명령어 전달
+                        for (int j = 0; j < totalNodesNum; j++) {
+                            if (!strncmp(totalNodes[j], nodes[i], strlen(nodes[i]))) {
+                                interactiveNodes[j] = 0;
+                                write(fd1[j][1], interactiveBuf, strlen(interactiveBuf));
+                            }
+                        }
+                    }
+
+                    printf("--------------------------\n");
+                    //파이프에 입력받은 내용 main에 출력
+                    while (1) {
+                        for (int j = 0; j < totalNodesNum; j++) {
+                            char interactiveOutputBuf[MSGSIZE] = {0};
+                            if (interactiveNodes[j] == 1) continue;
+                            switch (nread = read(fd2[j][0], interactiveOutputBuf, MSGSIZE)) {
+                                case -1:
+                                    if (errno == EAGAIN) {
+                                        sleep(1);
+                                        break;
+                                    } else perror("read call");
+                                case 0:
+                                    printf("End of conversation\n");
+                                    break;
+                                default:
+                                    interactiveNodes[j] = 1;
+                                    char res[10][100] = {0};
+                                    //문자열 파싱
+                                    parseInput(interactiveOutputBuf, res, "\r\n");
+                                    printf("%s:%s\n", totalNodes[j], res[2]);
+                            }
+                        }
+                        //요청이 모두 출력되었으면 while문 종료
+                        bool flag = true;
+                        for (int j = 0; j < totalNodesNum; j++) {
+                            if (interactiveNodes[j] == 0) {
+                                flag = false;
+                                break;
+                            }
+                        }
+                        if (flag) {
+                            break;
+                        }
+                    }
+                    printf("--------------------------\n");
                 }
-
 
                 continue;
             }
