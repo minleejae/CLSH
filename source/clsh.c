@@ -15,6 +15,7 @@
 char *totalNodes[] = {"node1", "node2", "node3", "node4"};
 pid_t pid[TOTAL_NODES_NUM]; /* process id */
 
+bool mainTerminated = false;
 
 //원격 명령어 파싱하는 함수, 문자 개수 리턴
 int getRemoteCommend(char parsing[][MSGSIZE], int start, int inputWords, char remoteCommand[]) {
@@ -44,6 +45,7 @@ int parseInput(char buf[], char parsing[][MSGSIZE], const char *delimeter) {
 
 //모든 자식프로세스를 종료하는 함수
 void terminateAllChildProcess(int sig) {
+    //sigchld block
     int childStatus;
     //모든 자식프로세스에 sigstop 시그널 보내기
     for (int i = 0; i < TOTAL_NODES_NUM; i++) {
@@ -61,18 +63,21 @@ void terminateAllChildProcess(int sig) {
 
 
 void sigTermHandler(int signo) {
+    mainTerminated = true;
     psignal(signo, "Received Signal:");
     terminateAllChildProcess(SIGTERM);
     exit(0);
 }
 
 void sigQuitHandler(int signo) {
+    mainTerminated = true;
     psignal(signo, "Received Signal:");
     terminateAllChildProcess(SIGKILL);
     exit(0);
 }
 
 void sigChildHandler(int signo) {
+    if(mainTerminated) return;
     pid_t pid_child;
     int node = -1;
     int status;
@@ -159,8 +164,6 @@ int main() {
     //SIGTERM, SIGINT, SIGTSTP, SIGQUIT 시그널 처리
     struct sigaction act, chld;
     sigemptyset(&act.sa_mask);
-    //SIGCHLD Block
-    sigaddset(&act.sa_mask, SIGCHLD);
     act.sa_flags = 0;
     act.sa_handler = sigTermHandler;
     if (sigaction(SIGTERM, &act, (struct sigaction *) NULL) < 0) {
