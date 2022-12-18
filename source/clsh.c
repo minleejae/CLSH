@@ -9,10 +9,11 @@
 #include <errno.h>
 #include <signal.h>
 
+#define TOTAL_NODES_NUM 4
 #define MSGSIZE 1000
 
-int totalNodesNum = 4;
 char *totalNodes[] = {"node1", "node2", "node3", "node4"};
+pid_t pid[TOTAL_NODES_NUM]; /* process id */
 
 
 //원격 명령어 파싱하는 함수, 문자 개수 리턴
@@ -42,30 +43,66 @@ int parseInput(char buf[], char parsing[][100], const char *delimeter) {
 }
 
 //모든 자식프로세스를 종료하는 함수
-void terminateAllChildProcess(pid_t pid[]) {
+void terminateAllChildProcess(int sig) {
     int childStatus;
     //모든 자식프로세스에 sigstop 시그널 보내기
-    for (int i = 0; i < totalNodesNum; i++) {
-        printf("%d번 프로세스에 SIGTERM 시그널 전송\n", pid[i]);
-        kill(pid[i], SIGTERM);
+    for (int i = 0; i < TOTAL_NODES_NUM; i++) {
+        kill(pid[i], sig);
     }
 
     //자식 프로세스가 끝날 때까지 wait
-    for (int i = 0; i < totalNodesNum; i++) {
+    for (int i = 0; i < TOTAL_NODES_NUM; i++) {
         pid_t terminatedChild = wait(&childStatus);
+        if (terminatedChild <= 0) continue;
         printf("자식 프로세스(%d)가 종료되었습니다.\n", terminatedChild);
     }
+    printf("모든 프로세스가 종료되었습니다.\n");
 }
+
+
+void sigTermHandler(int signo) {
+    psignal(signo, "Received Signal:");
+    terminateAllChildProcess(SIGTERM);
+    exit(0);
+}
+
+void sigQuitHandler(int signo) {
+    psignal(signo, "Received Signal:");
+    terminateAllChildProcess(SIGKILL);
+    exit(0);
+}
+
+void sigChildHandler(int signo) {
+    pid_t pid_child;
+    int node = -1;
+    int status;
+    while (1) {
+        if ((pid_child = waitpid(-1, &status, WNOHANG)) > 0) {
+            printf("자식 프로세스(%d)가 종료되었습니다.\n", pid_child);
+            for (int i = 0; i < TOTAL_NODES_NUM; i++) {
+                if ((int)pid_child == (int)pid[i]) {
+                    node = i;
+                }
+            }
+        } else {
+            break;
+        }
+    }
+    printf("ERROR: %s connection lost\n", totalNodes[node]);
+    terminateAllChildProcess(SIGTERM);
+    exit(0);
+}
+
 
 int main() {
     char buf[MSGSIZE];
     int i;
 
-    pid_t pid[totalNodesNum]; /* process id */
-    int fd1[totalNodesNum][2], fd2[totalNodesNum][2], fd3[totalNodesNum][2];
+
+    int fd1[TOTAL_NODES_NUM][2], fd2[TOTAL_NODES_NUM][2], fd3[TOTAL_NODES_NUM][2];
 
     //ssh connect
-    for (i = 0; i < totalNodesNum; i++) {
+    for (i = 0; i < TOTAL_NODES_NUM; i++) {
         //파이프 생성
         if (pipe(fd1[i]) == -1) {
             perror("pipe");
@@ -120,14 +157,44 @@ int main() {
             setvbuf(stdout, NULL, _IOLBF, 0);
         }
     }
-
     //child는 exec하기 때문에 아래 코드는 부모프로세스에서만 동작
+
+    //SIGTERM, SIGINT, SIGTSTP, SIGQUIT 시그널 처리
+    struct sigaction act, chld;
+    sigemptyset(&act.sa_mask);
+    act.sa_flags = 0;
+    act.sa_handler = sigTermHandler;
+    if (sigaction(SIGTERM, &act, (struct sigaction *) NULL) < 0) {
+        perror("sigaction");
+        exit(1);
+    }
+    if (sigaction(SIGINT, &act, (struct sigaction *) NULL) < 0) {
+        perror("sigaction");
+        exit(1);
+    }
+    if (sigaction(SIGTSTP, &act, (struct sigaction *) NULL) < 0) {
+        perror("sigaction");
+        exit(1);
+    }
+    act.sa_handler = sigQuitHandler;
+    if (sigaction(SIGQUIT, &act, (struct sigaction *) NULL) < 0) {
+        perror("sigaction");
+        exit(1);
+    }
+
+    //sigchld 처리
+    chld.sa_handler = sigChildHandler;
+    sigfillset(&chld.sa_mask);
+    chld.sa_flags = SA_NOCLDSTOP;
+    sigaction(SIGCHLD, &chld, NULL);
+
+
     //ssh connected 출력
     int nread;
     bool checkSshConnected[4] = {0};
     printf("모든 노드에 ssh 연결 중입니다.\n");
     while (1) {
-        for (int j = 0; j < totalNodesNum; j++) {
+        for (int j = 0; j < TOTAL_NODES_NUM; j++) {
             //이미 출력했으면 출력하지 않음
             if (checkSshConnected[j] == 1) continue;
             memset(buf, 0, sizeof(buf));
@@ -147,7 +214,7 @@ int main() {
         }
         //모든 노드가 연결되었는지 여부 검사후 while문 종료
         bool flag = true;
-        for (int i = 0; i < totalNodesNum; i++) {
+        for (int i = 0; i < TOTAL_NODES_NUM; i++) {
             if (!checkSshConnected[i]) {
                 flag = false;
             }
@@ -166,9 +233,9 @@ int main() {
         fgets(inputBuf, sizeof(inputBuf) - 1, stdin);
         inputBuf[strlen(inputBuf) - 1] = '\0';
 
-        //명령을 전달한 노드가 출력을 완료했는지 여부
-        bool completedNodes[totalNodesNum];
-        for (int i = 0; i < totalNodesNum; i++) {
+        //명령을 전달한 노드가 출력을 완료했는지 여부 저장
+        bool completedNodes[TOTAL_NODES_NUM];
+        for (int i = 0; i < TOTAL_NODES_NUM; i++) {
             completedNodes[i] = 1;
         }
 
@@ -179,16 +246,14 @@ int main() {
         //명령을 보낼 노드와 명령어
         char nodes[10][100] = {0};
         char remoteCommand[200] = {0};
-        int curCommand[10] = {0};
         int inputNodesNum = -1;
         int commandLength = -1;
 
         if (strlen(inputBuf) != 0 && !strncmp(inputBuf, "quit", strlen(inputBuf))) { //메인 프로세스 종료
-            printf("메인 프로세스를 종료합니다\n");
-            terminateAllChildProcess(pid);
+            terminateAllChildProcess(SIGTERM);
             printf("모든 프로세스가 종료되었습니다.\n");
             return 0;
-        } else if (!strncmp(parsing[0], "clsh", strlen(parsing[0]))) { //clsh 명령어
+        } else if (!strncmp(parsing[0], "clsh", 4)) { //clsh 명령어
             //clsh -h node1,node2,node3,node4 cat /proc/loadavg
             if (!strncmp(parsing[1], "-h", 2)) {
                 //명령을 보낼 노드 구하기
@@ -255,7 +320,7 @@ int main() {
                 //input 받기
                 while (1) {
                     //input
-                    bool interactiveNodes[totalNodesNum];
+                    bool interactiveNodes[TOTAL_NODES_NUM];
                     memcpy(interactiveNodes, completedNodes, sizeof(interactiveNodes));
 
                     printf("clsh>");
@@ -281,7 +346,7 @@ int main() {
                     //노드 이름 비교하고 명령 보내기
                     for (int i = 0; i < inputNodesNum; i++) {
                         //미리 선언한 totalNodes와 이름 비교하고 명령어 전달
-                        for (int j = 0; j < totalNodesNum; j++) {
+                        for (int j = 0; j < TOTAL_NODES_NUM; j++) {
                             if (!strncmp(totalNodes[j], nodes[i], strlen(nodes[i]))) {
                                 interactiveNodes[j] = 0;
                                 write(fd1[j][1], interactiveBuf, strlen(interactiveBuf));
@@ -292,7 +357,7 @@ int main() {
                     printf("--------------------------\n");
                     //파이프에 입력받은 내용 main에 출력
                     while (1) {
-                        for (int j = 0; j < totalNodesNum; j++) {
+                        for (int j = 0; j < TOTAL_NODES_NUM; j++) {
                             char interactiveOutputBuf[MSGSIZE] = {0};
                             if (interactiveNodes[j] == 1) continue;
                             switch (nread = read(fd2[j][0], interactiveOutputBuf, MSGSIZE)) {
@@ -314,7 +379,7 @@ int main() {
                         }
                         //요청이 모두 출력되었으면 while문 종료
                         bool flag = true;
-                        for (int j = 0; j < totalNodesNum; j++) {
+                        for (int j = 0; j < TOTAL_NODES_NUM; j++) {
                             if (interactiveNodes[j] == 0) {
                                 flag = false;
                                 break;
@@ -333,7 +398,7 @@ int main() {
             //노드 이름 비교하고 명령 보내기
             for (int i = 0; i < inputNodesNum; i++) {
                 //미리 선언한 totalNodes와 이름 비교하고 명령어 전달
-                for (int j = 0; j < totalNodesNum; j++) {
+                for (int j = 0; j < TOTAL_NODES_NUM; j++) {
                     if (!strncmp(totalNodes[j], nodes[i], strlen(nodes[i]))) {
                         completedNodes[j] = 0;
                         write(fd1[j][1], remoteCommand, commandLength);
@@ -347,7 +412,7 @@ int main() {
 
         //파이프에 입력받은 내용 main에 출력
         while (1) {
-            for (int j = 0; j < totalNodesNum; j++) {
+            for (int j = 0; j < TOTAL_NODES_NUM; j++) {
                 //이미 출력했으면 출력하지 않음
                 memset(buf, 0, sizeof(buf));
                 if (completedNodes[j] == 1) continue;
@@ -372,7 +437,7 @@ int main() {
 
             //요청이 모두 출력되었으면 while문 종료
             bool flag = true;
-            for (int j = 0; j < totalNodesNum; j++) {
+            for (int j = 0; j < TOTAL_NODES_NUM; j++) {
                 if (completedNodes[j] == 0) {
                     flag = false;
                     break;
