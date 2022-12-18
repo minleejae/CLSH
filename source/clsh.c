@@ -7,6 +7,7 @@
 #include <sys/types.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <signal.h>
 
 #define MSGSIZE 1000
 
@@ -40,16 +41,27 @@ int parseInput(char buf[], char parsing[][100], const char *delimeter) {
     return words;
 }
 
+//모든 자식프로세스를 종료하는 함수
+void terminateAllChildProcess(pid_t pid[]) {
+    int childStatus;
+    //모든 자식프로세스에 sigstop 시그널 보내기
+    for (int i = 0; i < totalNodesNum; i++) {
+        printf("%d번 프로세스에 SIGTERM 시그널 전송\n", pid[i]);
+        kill(pid[i], SIGTERM);
+    }
+
+    //자식 프로세스가 끝날 때까지 wait
+    for (int i = 0; i < totalNodesNum; i++) {
+        pid_t terminatedChild = wait(&childStatus);
+        printf("자식 프로세스(%d)가 종료되었습니다.\n", terminatedChild);
+    }
+}
 
 int main() {
-    pid_t childPid[4] = {0};
-    //ssh fork, exec
-    pid_t pid[totalNodesNum]; /* process id */
-
     char buf[MSGSIZE];
-    int childStatus;
     int i;
 
+    pid_t pid[totalNodesNum]; /* process id */
     int fd1[totalNodesNum][2], fd2[totalNodesNum][2], fd3[totalNodesNum][2];
 
     //ssh connect
@@ -109,7 +121,7 @@ int main() {
         }
     }
 
-
+    //child는 exec하기 때문에 아래 코드는 부모프로세스에서만 동작
     //ssh connected 출력
     int nread;
     bool checkSshConnected[4] = {0};
@@ -171,9 +183,11 @@ int main() {
         int inputNodesNum = -1;
         int commandLength = -1;
 
-        if (strlen(inputBuf) != 0 && !strncmp(inputBuf, "exit", strlen(inputBuf))) { //exit
-            printf("exit from cluster shell\n");
-            return -1;
+        if (strlen(inputBuf) != 0 && !strncmp(inputBuf, "quit", strlen(inputBuf))) { //메인 프로세스 종료
+            printf("메인 프로세스를 종료합니다\n");
+            terminateAllChildProcess(pid);
+            printf("모든 프로세스가 종료되었습니다.\n");
+            return 0;
         } else if (!strncmp(parsing[0], "clsh", strlen(parsing[0]))) { //clsh 명령어
             //clsh -h node1,node2,node3,node4 cat /proc/loadavg
             if (!strncmp(parsing[1], "-h", 2)) {
@@ -369,17 +383,6 @@ int main() {
             }
         }
     }
-
-
-    //wait
-    for (i = 0; i < totalNodesNum; i++) {
-        pid_t terminatedChild = wait(&childStatus);
-        if (WIFEXITED(childStatus)) {
-            printf("Child %d has terminated with exit status %d\n", terminatedChild, WEXITSTATUS(childStatus));
-        } else
-            printf("Child %d has terminated abnormally\n", terminatedChild);
-    }
-
 
     return 0;
 }
