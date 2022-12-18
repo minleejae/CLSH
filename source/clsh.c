@@ -49,7 +49,7 @@ int main() {
     int childStatus;
     int i;
 
-    int fd1[totalNodesNum][2], fd2[totalNodesNum][2];
+    int fd1[totalNodesNum][2], fd2[totalNodesNum][2], fd3[totalNodesNum][2];
 
     //ssh connect
     for (i = 0; i < totalNodesNum; i++) {
@@ -62,6 +62,11 @@ int main() {
             perror("pipe");
             exit(1);
         }
+        if (pipe(fd3[i]) == -1) {
+            perror("pipe");
+            exit(1);
+        }
+
 
         //read non block
         if (fcntl(fd2[i][0], F_SETFL, O_NONBLOCK) == -1) {
@@ -79,7 +84,11 @@ int main() {
 
             //표준 출력을 파이프를 통해 출력
             dup2(fd2[i][1], STDOUT_FILENO);
-            close(fd1[i][1]);
+            close(fd2[i][1]);
+
+            //stderr를 파이프를 통해 출력
+            dup2(fd3[i][1], STDERR_FILENO);
+            close(fd3[i][1]);
 
             //buffer setting
             setvbuf(stdin, NULL, _IOLBF, 0);
@@ -91,6 +100,7 @@ int main() {
         } else {
             close(fd1[i][0]);
             close(fd2[i][1]);
+            close(fd3[i][1]);
 
             //buffer setting
             setvbuf(stdin, NULL, _IOLBF, 0);
@@ -134,11 +144,6 @@ int main() {
             break;
         }
     }
-
-
-
-
-
 
 
     //명령어 입력
