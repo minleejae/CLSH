@@ -135,6 +135,12 @@ int main() {
         }
     }
 
+
+
+
+
+
+
     //명령어 입력
     while (1) {
         //input
@@ -180,6 +186,35 @@ int main() {
                     close(hostFileFd);
                 } else {
                     printf("%s 파일 열기에 실패했습니다.\n", parsing[2]);
+                }
+            } else {//--hostfile 옵션 생략, env에서 읽어오기
+                commandLength = getRemoteCommend(parsing, 1, inputWords, remoteCommand);
+                char *clsh_host_env = getenv("CLSH_HOSTS");
+                char *clsh_hostfile_env = getenv("CLSH_HOSTFILE");
+                int hostFileFd = -1;
+                char hostFileBuf[MSGSIZE] = {0};
+
+                if (clsh_host_env != NULL) { //CLSH_HOSTS 환경 변수에서 호스트 이름 읽어오기
+                    printf("Note: use CLSH_HOSTS environment\n");
+                    inputNodesNum = parseInput(clsh_host_env, nodes, ":");
+                } else if (clsh_hostfile_env != NULL) { //hostfile에서 읽기
+                    if ((hostFileFd = open(clsh_hostfile_env, O_RDONLY)) > 0) {
+                        printf("Note: use hostfile '%s' (CLSH_HOSTFILE env)\n", clsh_hostfile_env);
+                        int len = read(hostFileFd, hostFileBuf, MSGSIZE);
+                        //파일에 적혀있는 노드 이름 파싱
+                        inputNodesNum = parseInput(hostFileBuf, nodes, ":");
+                        close(hostFileFd);
+                    } else {
+                        printf("%s 파일 열기에 실패했습니다.\n", clsh_hostfile_env);
+                    }
+                } else if ((hostFileFd = open(".hostfile", O_RDONLY)) > 0) { //현재 디렉토리에서 .hostfile에서 읽어오기
+                    printf("Note: use hostfile '.hostfile' (default)\n");
+                    int len = read(hostFileFd, hostFileBuf, MSGSIZE);
+                    //파일에 적혀있는 노드 이름 파싱
+                    inputNodesNum = parseInput(hostFileBuf, nodes, ":");
+                    close(hostFileFd);
+                } else {
+                    printf("--hostfile 옵션이 제공되지 않았습니다\n");
                 }
             }
 
