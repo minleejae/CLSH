@@ -115,14 +115,7 @@ docker-compose.yml파일에서 main의 환경변수 CLSH_HOSTS를 node1:node2:no
 
 
 옵션 6. SSH 연결 중 일부 연결이 끊어지면 에러를 출력하고 메인 프로세스도 종료된다.
-쉘에서 kill 명령어를 입력해 자식 프로세스에 SIGQUIT을 보냈다.
-
-
-
-추가 예시
-출력이 길지 않은 경우 다음과 같이 원격 명령을 수행한 결과를 알 수 있다.
-Interactive mode로 node1과 node3에 접속하고 ls / 명령어를 수행한 결과와
-cd etc, ls 명령어를 수행한 결과이다.
+쉘에서 kill 명령어를 입력해 자식 프로세스에 SIGQUIT을 보낸다.
 
 
 
